@@ -1,0 +1,22 @@
+{
+  "name": "playwright-enterprise-framework",
+  "version": "1.0.0",
+  "description": "Enterprise-level test automation framework using Playwright and TypeScript.",
+  "main": "index.js",
+  "scripts": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Mihai-George-Serban/playwright-enterprise-framework.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Mihai-George-Serban/playwright-enterprise-framework/issues"
+  },
+  "homepage": "https://github.com/Mihai-George-Serban/playwright-enterprise-framework#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@types/node": "^25.7.0"
+  }
+}
