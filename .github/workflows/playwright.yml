@@ -1,4 +1,4 @@
-name: Playwright Tests
+name: E2E Tests (Playwright, Cypress, Selenium)
 on:
   push:
     branches: [ main, master ]
@@ -6,7 +6,7 @@ on:
     branches: [ main, master ]
 jobs:
   test:
-    timeout-minutes: 60
+    timeout-minutes: 120
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -18,10 +18,22 @@ jobs:
     - name: Install Playwright Browsers
       run: npx playwright install --with-deps
     - name: Run Playwright tests
-      run: npx playwright test
+      run: npm run test:playwright
+    - name: Install Cypress
+      run: npm run test:cypress -- --headless
+      continue-on-error: true
+    - name: Run Selenium tests
+      run: npm run test:selenium
+      continue-on-error: true
     - uses: actions/upload-artifact@v4
       if: ${{ !cancelled() }}
       with:
         name: playwright-report
         path: playwright-report/
+        retention-days: 30
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: cypress-videos
+        path: cypress/videos
         retention-days: 30

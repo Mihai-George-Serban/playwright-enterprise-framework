@@ -3,7 +3,12 @@
   "version": "1.0.0",
   "description": "Enterprise-level test automation framework using Playwright and TypeScript.",
   "main": "index.js",
-  "scripts": {},
+  "scripts": {
+    "test": "npx npm-run-all --serial --continue-on-error test:playwright test:cypress test:selenium",
+    "test:playwright": "playwright test",
+    "test:cypress": "cypress run",
+    "test:selenium": "ts-node tests/selenium/run.ts"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Mihai-George-Serban/playwright-enterprise-framework.git"
@@ -17,6 +22,12 @@
   "homepage": "https://github.com/Mihai-George-Serban/playwright-enterprise-framework#readme",
   "devDependencies": {
     "@playwright/test": "^1.60.0",
-    "@types/node": "^25.7.0"
+    "@types/node": "^25.7.0",
+    "cypress": "^13.6.0",
+    "selenium-webdriver": "^4.15.0",
+    "@types/selenium-webdriver": "^4.0.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.2.0",
+    "npm-run-all": "^4.1.5"
   }
 }
