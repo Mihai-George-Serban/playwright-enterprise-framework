@@ -3,8 +3,7 @@ import os from 'os';
 import fs from 'fs';
 import { Builder, By, until, WebDriver, WebElement } from 'selenium-webdriver';
 import chrome from 'selenium-webdriver/chrome';
-import { loginTests } from './login.spec';
-import { Key } from 'selenium-webdriver';
+import { LOGIN_TEST_CASES } from './login.spec';
 import { inventoryTests } from './inventory.spec';
 import { cartTests } from './cart.spec';
 import { checkoutTests } from './checkout.spec';
@@ -12,8 +11,31 @@ import { navigationTests } from './navigation.spec';
 import { accessibilityTests } from './accessibility.spec';
 import { visualRegressionTests } from './visual-regression.spec';
 import { apiTests } from './api.spec';
+import { clearAndType, dismissChromeDialogs } from './helpers';
 
 const BASE_URL = 'https://www.saucedemo.com';
+
+const SUITE_TESTS = new Set([
+  'login-suite',
+  'inventory-suite',
+  'cart-suite',
+  'checkout-suite',
+  'navigation-suite',
+  'accessibility-suite',
+  'visual-regression-suite',
+  'api-suite',
+]);
+
+const DEFAULT_TESTS = [
+  'login-suite',
+  'inventory-suite',
+  'cart-suite',
+  'checkout-suite',
+  'navigation-suite',
+  'accessibility-suite',
+  'visual-regression-suite',
+  'api-suite',
+];
 
 // Create a temporary directory for Chrome user data to avoid password manager popups
 function getTempChromeDataDir(): string {
@@ -63,34 +85,6 @@ function ensureDriverPath(browser: string) {
 
 }
 
-async function tryDismissPasswordPopup(driver: WebDriver) {
-  try {
-    // 1) Send Escape key - often closes dialogs
-    await driver.actions().sendKeys(Key.ESCAPE).perform();
-  } catch {
-    // ignore
-  }
-
-  try {
-    // 2) Send Tab then Enter to activate any focused accept button
-    await driver.actions().sendKeys(Key.TAB, Key.ENTER).perform();
-  } catch {
-    // ignore
-  }
-
-    try {
-    // 3) As a last resort, try clicking near the top-right area of the viewport
-    //    This is a heuristic; coordinates may need tuning per environment.
-    const dims: any = await driver.executeScript('return {w: window.innerWidth, h: window.innerHeight};');
-    const x = Math.max(10, Math.floor(dims.w - 120));
-    const y = Math.max(10, 80);
-    // Use DOM click via elementFromPoint to avoid TS input origin typing issues
-    await driver.executeScript('const el = document.elementFromPoint(arguments[0], arguments[1]); if (el) el.click();', x, y);
-  } catch {
-    // ignore
-  }
-}
-
 function buildDriver(browser: string, headless: boolean): Promise<WebDriver> {
   if (browser !== 'chrome') {
     throw new Error(`Unsupported browser: ${browser}. Selenium tests are configured for Chrome only.`);
@@ -107,13 +101,13 @@ function buildDriver(browser: string, headless: boolean): Promise<WebDriver> {
     const tempChromeDir = getTempChromeDataDir();
     options.addArguments(`--user-data-dir=${tempChromeDir}`);
     
-    // Aggressively disable Chrome's password manager, autofill, and breach detection UI
+    // Single --disable-features flag (multiple flags override each other in Chrome)
     options.addArguments(
       '--disable-blink-features=AutomationControlled',
       '--disable-save-password-bubble',
       '--disable-password-manager-reauthentication',
       '--disable-component-extensions-with-background-pages',
-      '--disable-features=PasswordSaving,PasswordBreachDetection,PasswordGenerator,PasswordFilling,PasswordsUIRefresh,PasswordsInSettings,TranslateUIBrowser,CredentialProviderService,AutofillSaveFormPopup,PasswordManagerOnboardingUI,PasswordManagerAutoSignin,AutofillServerCommunication,AutofillProfileEnabled,AutofillCreditCardEnabled,PasswordManager',
+      '--disable-features=PasswordSaving,PasswordBreachDetection,PasswordBreachDetectionUI,PasswordCheck,PasswordGenerator,PasswordFilling,PasswordLeakDetection,PasswordLeakWarning,PasswordManager,PasswordManagerAutoSignin,PasswordManagerOnboardingUI,PasswordsInSettings,PasswordsUIRefresh,CredentialLeakDetection,CredentialProviderService,AutofillSaveFormPopup,AutofillServerCommunication,AutofillProfileEnabled,AutofillCreditCardEnabled,SafeBrowsingEnhancedProtection,TranslateUI,TranslateUIBrowser',
       '--password-store=basic',
       '--safebrowsing-disable-auto-update',
       '--safebrowsing-disable-download-protection',
@@ -128,16 +122,20 @@ function buildDriver(browser: string, headless: boolean): Promise<WebDriver> {
       '--disable-notifications',
       '--disable-sync',
       '--disable-default-apps',
-      '--disable-client-side-phishing-detection',
-      '--disable-password-manager',
-      '--disable-features=TranslateUI'
+      '--disable-client-side-phishing-detection'
     );
-    
-    // Set Chrome user preferences to fully disable credentials service and password manager
+
+    try {
+      options.excludeSwitches('enable-automation', 'enable-logging');
+    } catch {
+      // ignore if the API isn't available
+    }
+
     try {
       options.setUserPreferences({
         'credentials_enable_service': false,
         'profile.password_manager_enabled': false,
+        'profile.password_manager_leak_detection': false,
         'password_manager_enabled': false,
         'browser.enable_automatic_password_manager': false,
         'autofill.profile_enabled': false,
@@ -146,15 +144,11 @@ function buildDriver(browser: string, headless: boolean): Promise<WebDriver> {
         'profile.default_content_setting_values.popups': 0,
         'profile.managed_default_content_settings.popups': 0,
         'profile.managed_default_content_settings.notifications': 2,
-        'safebrowsing.enabled': false
+        'safebrowsing.enabled': false,
       });
     } catch {
       // ignore if the API isn't available
     }
-    // Add extra variants to cover different Chrome versions and feature names
-    options.addArguments(
-      '--disable-features=PasswordLeakDetection,PasswordLeakWarning,CredentialLeakDetection,PasswordLeakWarningUI,PasswordBreachDetectionUI'
-    );
     
     builder.setChromeOptions(options);
   }
@@ -221,8 +215,10 @@ async function performLogin(driver: WebDriver, username?: string, password?: str
   }
 
   await driver.get(BASE_URL);
-  await driver.findElement(By.id('user-name')).sendKeys(userToUse);
-  await driver.findElement(By.id('password')).sendKeys(passToUse);
+  const userEl = await driver.wait(until.elementLocated(By.id('user-name')), 10000);
+  const passEl = await driver.findElement(By.id('password'));
+  await clearAndType(driver, userEl, userToUse);
+  await clearAndType(driver, passEl, passToUse, { password: true });
   await driver.findElement(By.id('login-button')).click();
   await driver.wait(until.urlContains('inventory.html'), 10000).catch(() => null);
 }
@@ -235,8 +231,10 @@ async function loginTest(driver: WebDriver) {
 
 async function invalidLoginTest(driver: WebDriver) {
   await driver.get(BASE_URL);
-  await driver.findElement(By.id('user-name')).sendKeys('invalid_user');
-  await driver.findElement(By.id('password')).sendKeys('wrong_password');
+  const userEl = await driver.wait(until.elementLocated(By.id('user-name')), 10000);
+  const passEl = await driver.findElement(By.id('password'));
+  await clearAndType(driver, userEl, 'invalid_user');
+  await clearAndType(driver, passEl, 'wrong_password', { password: true });
   await driver.findElement(By.id('login-button')).click();
   const errorText = await getElementText(driver, By.css('[data-test="error"]'));
   return errorText.includes('Username and password') || errorText.includes('do not match') || errorText.includes('locked out');
@@ -244,8 +242,10 @@ async function invalidLoginTest(driver: WebDriver) {
 
 async function lockedOutUserTest(driver: WebDriver) {
   await driver.get(BASE_URL);
-  await driver.findElement(By.id('user-name')).sendKeys('locked_out_user');
-  await driver.findElement(By.id('password')).sendKeys('secret_sauce');
+  const userEl = await driver.wait(until.elementLocated(By.id('user-name')), 10000);
+  const passEl = await driver.findElement(By.id('password'));
+  await clearAndType(driver, userEl, 'locked_out_user');
+  await clearAndType(driver, passEl, 'secret_sauce', { password: true });
   await driver.findElement(By.id('login-button')).click();
   const errorText = await getElementText(driver, By.css('[data-test="error"]'));
   return errorText.includes('locked out');
@@ -562,21 +562,106 @@ async function socialLinksTest(driver: WebDriver) {
   return twitter && facebook && linkedin;
 }
 
+function logSuiteResults(testResults: { name: string; passed: boolean; error?: string }[]) {
+  for (const result of testResults) {
+    console.log(`${result.passed ? '✓' : '✗'} ${result.name}`);
+    if (!result.passed && result.error) {
+      console.error(`  Error: ${result.error}`);
+    }
+  }
+}
+
+async function runSuite(
+  test: string,
+  driver: WebDriver,
+  results: { name: string; passed: boolean }[],
+  browser = 'chrome',
+  headless = false
+) {
+  let testResults: { name: string; passed: boolean; error?: string }[];
+
+  switch (test) {
+    case 'login-suite':
+      testResults = [];
+      for (const testCase of LOGIN_TEST_CASES) {
+        const isolatedDriver = await buildDriver(browser, headless);
+        try {
+          await dismissChromeDialogs(isolatedDriver);
+          const result = await testCase.run(isolatedDriver, BASE_URL);
+          testResults.push(result);
+          console.log(`${result.passed ? '✓' : '✗'} ${result.name}`);
+          if (!result.passed && result.error) {
+            console.error(`  Error: ${result.error}`);
+          }
+        } finally {
+          await isolatedDriver.quit();
+        }
+      }
+      results.push(...testResults);
+      return;
+    case 'inventory-suite':
+      testResults = await inventoryTests(driver, BASE_URL);
+      break;
+    case 'cart-suite':
+      testResults = await cartTests(driver, BASE_URL);
+      break;
+    case 'checkout-suite':
+      testResults = await checkoutTests(driver, BASE_URL);
+      break;
+    case 'navigation-suite':
+      testResults = await navigationTests(driver, BASE_URL);
+      break;
+    case 'accessibility-suite':
+      testResults = await accessibilityTests(driver, BASE_URL);
+      break;
+    case 'visual-regression-suite': {
+      const screenshotDir = path.join(process.cwd(), 'test-results', 'selenium-screenshots');
+      testResults = await visualRegressionTests(driver, BASE_URL, screenshotDir);
+      break;
+    }
+    case 'api-suite':
+      testResults = await apiTests(driver, BASE_URL);
+      break;
+    default:
+      throw new Error(`Unknown Selenium suite: ${test}`);
+  }
+
+  results.push(...testResults);
+  logSuiteResults(testResults);
+}
+
 async function runSelectedTests(browser: string, headless: boolean, selected: string[]) {
   const results: { name: string; passed: boolean }[] = [];
+  const suiteSelection = selected.filter((test) => SUITE_TESTS.has(test));
+  const individualSelection = selected.filter((test) => !SUITE_TESTS.has(test));
 
-  for (const test of selected) {
+  for (const test of suiteSelection) {
+    if (test === 'login-suite') {
+      await runSuite(test, null as unknown as WebDriver, results, browser, headless);
+      continue;
+    }
+
+    const driver = await buildDriver(browser, headless);
+    try {
+      await dismissChromeDialogs(driver);
+      await runSuite(test, driver, results, browser, headless);
+    } finally {
+      await driver.quit();
+    }
+  }
+
+  for (const test of individualSelection) {
     const driver = await buildDriver(browser, headless);
     try {
       // helper to run a test with one retry after attempting to dismiss the Chrome password popup
       async function runWithRetry(exec: () => Promise<boolean>, displayName: string) {
         try {
-          await tryDismissPasswordPopup(driver);
+          await dismissChromeDialogs(driver);
           return await exec();
         } catch (err) {
           // retry once after attempting to dismiss the popup
           try {
-            await tryDismissPasswordPopup(driver);
+            await dismissChromeDialogs(driver);
             await new Promise((r) => setTimeout(r, 500));
             return await exec();
           } catch (err2) {
@@ -596,74 +681,7 @@ async function runSelectedTests(browser: string, headless: boolean, selected: st
         }
       }
 
-      if (test === 'login-suite') {
-        const testResults = await loginTests(driver, BASE_URL);
-        results.push(...testResults);
-        for (const result of testResults) {
-          console.log(`${result.passed ? '✓' : '✗'} ${result.name}`);
-          if (!result.passed && result.error) {
-            console.error(`  Error: ${result.error}`);
-          }
-        }
-      } else if (test === 'inventory-suite') {
-        const testResults = await inventoryTests(driver, BASE_URL);
-        results.push(...testResults);
-        for (const result of testResults) {
-          console.log(`${result.passed ? '✓' : '✗'} ${result.name}`);
-          if (!result.passed && result.error) {
-            console.error(`  Error: ${result.error}`);
-          }
-        }
-      } else if (test === 'cart-suite') {
-        const testResults = await cartTests(driver, BASE_URL);
-        results.push(...testResults);
-        for (const result of testResults) {
-          console.log(`${result.passed ? '✓' : '✗'} ${result.name}`);
-          if (!result.passed && result.error) {
-            console.error(`  Error: ${result.error}`);
-          }
-        }
-      } else if (test === 'checkout-suite') {
-        const testResults = await checkoutTests(driver, BASE_URL);
-        results.push(...testResults);
-        for (const result of testResults) {
-          console.log(`${result.passed ? '✓' : '✗'} ${result.name}`);
-          if (!result.passed && result.error) {
-            console.error(`  Error: ${result.error}`);
-          }
-        }
-      } else if (test === 'navigation-suite') {
-        const testResults = await navigationTests(driver, BASE_URL);
-        results.push(...testResults);
-        for (const result of testResults) {
-          console.log(`${result.passed ? '✓' : '✗'} ${result.name}`);
-          if (!result.passed && result.error) {
-            console.error(`  Error: ${result.error}`);
-          }
-        }
-      } else if (test === 'accessibility-suite') {
-        const testResults = await accessibilityTests(driver, BASE_URL);
-        results.push(...testResults);
-        for (const result of testResults) {
-          console.log(`${result.passed ? '✓' : '✗'} ${result.name}`);
-        }
-      } else if (test === 'visual-regression-suite') {
-        const screenshotDir = path.join(process.cwd(), 'test-results', 'selenium-screenshots');
-        const testResults = await visualRegressionTests(driver, BASE_URL, screenshotDir);
-        results.push(...testResults);
-        for (const result of testResults) {
-          console.log(`${result.passed ? '✓' : '✗'} ${result.name}`);
-          if (!result.passed && result.error) {
-            console.error(`  Error: ${result.error}`);
-          }
-        }
-      } else if (test === 'api-suite') {
-        const testResults = await apiTests(driver, BASE_URL);
-        results.push(...testResults);
-        for (const result of testResults) {
-          console.log(`${result.passed ? '✓' : '✗'} ${result.name}`);
-        }
-      } else {
+      {
         let passed = false;
         switch (test) {
           case 'login':
@@ -778,47 +796,7 @@ async function main() {
   const browser = parseArg('browser') || 'chrome';
   const headless = parseFlag('headless');
 
-  const allTests = [
-    'login',
-    'invalid-login',
-    'locked-out',
-    'problem-user-login',
-    'inventory',
-    'inventory-item-names',
-    'inventory-item-prices',
-    'product-image-visibility',
-    'add-to-cart',
-    'add-two-items',
-    'cart',
-    'remove-from-cart',
-    'remove-one-item',
-    'continue-shopping',
-    'cancel-checkout',
-    'checkout',
-    'finish-checkout',
-    'product-details',
-    'product-details-back',
-    'logout',
-    'sidebar-open',
-    'reset-app-state',
-    'about-link',
-    'menu-close',
-    'cart-item-details',
-    'footer-visible',
-    'sort',
-    'sort-hilo',
-    'sort-az',
-    'social-links',
-    'login-suite',
-    'inventory-suite',
-    'cart-suite',
-    'checkout-suite',
-    'navigation-suite',
-    'accessibility-suite',
-    'visual-regression-suite',
-    'api-suite'
-  ];
-  const testsToRun = selectedTests === 'all' ? allTests : selectedTests.split(',');
+  const testsToRun = selectedTests === 'all' ? DEFAULT_TESTS : selectedTests.split(',');
 
   console.log('Selenium runner starting with:');
   console.log(`  browser=${browser}`);

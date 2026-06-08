@@ -1,13 +1,7 @@
 import { WebDriver, By, until } from 'selenium-webdriver';
+import { login } from './helpers';
 
-async function login(driver: WebDriver, baseUrl: string, username: string, password: string) {
-  await driver.get(baseUrl + '/');
-  await driver.wait(until.elementLocated(By.id('user-name')), 5000);
-  await driver.findElement(By.id('user-name')).sendKeys(username);
-  await driver.findElement(By.id('password')).sendKeys(password);
-  await driver.findElement(By.id('login-button')).click();
-  await driver.wait(until.urlContains('/inventory'), 5000);
-}
+const API_WAIT = 5000;
 
 export async function apiTests(driver: WebDriver, baseUrl: string) {
   const testResults: { name: string; passed: boolean; error?: string }[] = [];
@@ -41,7 +35,7 @@ export async function apiTests(driver: WebDriver, baseUrl: string) {
 
   // Test 3: Inventory page loads
   try {
-    await login(driver, baseUrl, 'standard_user', 'secret_sauce');
+    await login(driver, baseUrl, 'standard_user', 'secret_sauce', API_WAIT);
     const pageSource = await driver.getPageSource();
     if (pageSource.includes('Products')) {
       testResults.push({ name: 'API - Inventory page loads', passed: true });

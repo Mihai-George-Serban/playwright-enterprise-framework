@@ -1,13 +1,7 @@
 import { WebDriver, By, until } from 'selenium-webdriver';
+import { login } from './helpers';
 
-async function login(driver: WebDriver, baseUrl: string, username: string, password: string) {
-  await driver.get(baseUrl + '/');
-  await driver.wait(until.elementLocated(By.id('user-name')), 5000);
-  await driver.findElement(By.id('user-name')).sendKeys(username);
-  await driver.findElement(By.id('password')).sendKeys(password);
-  await driver.findElement(By.id('login-button')).click();
-  await driver.wait(until.urlContains('/inventory'), 5000);
-}
+const ACCESSIBILITY_WAIT = 5000;
 
 export async function accessibilityTests(driver: WebDriver, baseUrl: string) {
   const testResults: { name: string; passed: boolean; error?: string }[] = [];
@@ -57,7 +51,7 @@ export async function accessibilityTests(driver: WebDriver, baseUrl: string) {
 
   // Test 4: Inventory items are visible and accessible
   try {
-    await login(driver, baseUrl, 'standard_user', 'secret_sauce');
+    await login(driver, baseUrl, 'standard_user', 'secret_sauce', ACCESSIBILITY_WAIT);
     const items = await driver.findElements(By.css('.inventory_item_name'));
     if (items.length === 6) {
       let allVisible = true;
@@ -116,7 +110,7 @@ export async function accessibilityTests(driver: WebDriver, baseUrl: string) {
 
   // Test 7: Checkout form fields are accessible
   try {
-    await login(driver, baseUrl, 'standard_user', 'secret_sauce');
+    await login(driver, baseUrl, 'standard_user', 'secret_sauce', ACCESSIBILITY_WAIT);
     await driver.findElement(By.css('[data-test="add-to-cart-sauce-labs-backpack"]')).click();
     await driver.findElement(By.css('.shopping_cart_link')).click();
     await driver.findElement(By.css('[data-test="checkout"]')).click();

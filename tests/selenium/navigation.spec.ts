@@ -1,30 +1,5 @@
 import { WebDriver, By, until } from 'selenium-webdriver';
-
-const WAIT = 10000;
-
-async function login(driver: WebDriver, baseUrl: string, username: string, password: string) {
-  await driver.get(baseUrl + '/');
-  await driver.wait(until.elementLocated(By.id('user-name')), WAIT);
-  await driver.findElement(By.id('user-name')).sendKeys(username);
-  await driver.findElement(By.id('password')).sendKeys(password);
-  await driver.findElement(By.id('login-button')).click();
-  await driver.wait(until.urlContains('/inventory'), WAIT);
-}
-
-async function resetAppState(driver: WebDriver) {
-  try {
-    const menuBtn = await driver.findElement(By.id('react-burger-menu-btn'));
-    await driver.executeScript('arguments[0].click();', menuBtn);
-    const resetLink = await driver.wait(until.elementLocated(By.id('reset_sidebar_link')), WAIT);
-    await driver.executeScript('arguments[0].click();', resetLink);
-    await driver.wait(async () => {
-      const badges = await driver.findElements(By.css('.shopping_cart_badge'));
-      return badges.length === 0;
-    }, WAIT);
-  } catch {
-    // ignore if reset is not available or already clean
-  }
-}
+import { WAIT, login, resetAppState } from './helpers';
 
 async function prepareNavigation(driver: WebDriver, baseUrl: string) {
   await login(driver, baseUrl, 'standard_user', 'secret_sauce');
